@@ -1,0 +1,109 @@
+{
+  "seed": 0,
+
+  "train_dataset":
+  {
+    "train_dir": "./dataset/json/tr",
+    "batch_size": 1,
+    "sample_rate": 8000,
+    "segment": -1,
+  },
+
+  "validation_dataset":
+  {
+    "validation_dir": "./dataset/json/cv",
+    "batch_size": 1,
+    "sample_rate": 8000,
+    "segment": -1,
+    "cv_max_len": 8,
+  },
+
+  "train_loader":
+  {
+   "batch_size": 1,
+   "shuffle": true,
+   "num_workers": 0,
+  },
+
+  "validation_loader":
+  {
+    "batch_size": 1,
+    "shuffle": true,
+    "num_workers": 0,
+  },
+
+  "model":
+  {
+    "type": "sandglasset",
+
+    "sandglasset":
+    {
+      "in_channels": 64,
+      "out_channels": 64,
+      "length": 256,
+      "hidden_channels": 128,
+      "num_layers": 1,
+      "bidirectional": true,
+      "num_heads": 8,
+      "cycle_amount": 4,
+      "speakers": 2
+    }
+  },
+
+  "train":
+  {
+    "use_cuda": false,
+    "epochs": 100,
+    "half_lr": true,
+    "early_stop": true,
+    "max_norm": 5,
+  },
+
+  "optimizer":
+  {
+    "type": "adamp",
+
+    "sgd":
+    {
+      "lr": 0.125,
+      "momentum": 0.0,
+      "l2": 0.0,
+    },
+
+    "adam":
+    {
+      "lr": 0.0125,
+      "beta1": 0.9,
+      "beta2": 0.999
+    },
+
+    "sgdp":
+    {
+      "lr":0.1,
+      "weight_decay":1e-5,
+      "momentum":0.9,
+      "nesterov":true
+    },
+
+    "adamp":
+    {
+      "lr":0.001,
+      "beta1":0.9,
+      "beta2":0.999,
+      "weight_decay":1e-2,
+    }
+  },
+
+  "save_load":
+  {
+    "save_folder": "./checkpoint/",
+    "checkpoint": true,
+    "continue_from": "",
+    "model_path": "final.path.tar",
+  },
+
+  "logging":
+  {
+    "print_freq": 1,
+  }
+}
