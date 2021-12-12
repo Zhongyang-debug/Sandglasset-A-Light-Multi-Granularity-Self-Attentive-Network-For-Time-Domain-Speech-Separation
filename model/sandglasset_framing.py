@@ -387,11 +387,17 @@ class Separation(nn.Module):
 
         B, _, K, S = x.shape
 
-        x = x.reshape(B*self.Spk, -1, K, S)  # torch.Size([2, 256, 256, 128])
+        x = x.reshape(B*self.Spk, -1, K, S)  # torch.Size([4, 256, 256, 128])
 
         x = self._over_add(x, gap)  # torch.Size([2, 256, 16002])
 
+        _, N, L = x.shape
+
+        x = x.reshape(B, self.Spk, N, L)  # torch.Size([1, 2, 128, 31999])
+
         x = self.ReLU(x)
+
+        x = x.transpose(0, 1)  # torch.Size([2, 1, 128, 31999])
 
         return x
 
@@ -475,11 +481,11 @@ class Sandglasset(nn.Module):
 
     def forward(self, x):
 
-        x, gap = self.framing(x)  # torch.Size([1, 4, 16002])
+        x, gap = self.framing(x)  # torch.Size([2, 4, 16002])
 
-        e = self.Encoder(x)  # torch.Size([1, 256, 16002])
+        e = self.Encoder(x)  # torch.Size([2, 256, 8000])
 
-        s = self.Separation(e)
+        s = self.Separation(e)  # torch.Size([4, 256, 8000])
 
         out = [s[i]*e for i in range(self.C)]
 
