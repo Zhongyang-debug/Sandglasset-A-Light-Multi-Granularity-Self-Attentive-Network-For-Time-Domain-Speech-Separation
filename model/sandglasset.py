@@ -1,25 +1,24 @@
 import torch
 import torch.nn as nn
 import math
+from torch.autograd import Variable
 
 
 class Encoder(nn.Module):
 
-    def __init__(self, out_channels):
+    def __init__(self, out_channels, kernel_size):
 
         super(Encoder, self).__init__()
 
         self.Conv1d = nn.Conv1d(in_channels=1,
                                 out_channels=out_channels,
-                                kernel_size=2,
-                                stride=1,
+                                kernel_size=kernel_size,
+                                stride=kernel_size//2,
                                 padding=0)
 
         self.ReLU = nn.ReLU()
 
     def forward(self, x):
-
-        x = torch.unsqueeze(x, dim=1)  # torch.Size([1, 32000]) => torch.Size([1, 1, 32000])
 
         x = self.Conv1d(x)  # torch.Size([1, 1, 32000]) => torch.Size([1, 64, 31999])
 
@@ -221,6 +220,8 @@ class Sandglasset_Block(nn.Module):
                                 stride=stride,
                                 padding=0)
 
+        self.LayerNorm = nn.LayerNorm(normalized_shape=in_channels)
+
         self.Globally_Attentive = Globally_Attentive(in_channels=in_channels,
                                                      num_heads=num_heads)
 
@@ -234,20 +235,22 @@ class Sandglasset_Block(nn.Module):
 
         B, N, K, S = x.shape  # torch.Size([1, 64, 200, 322])
 
+        residual = x
+
         x = self.Locally_Recurrent(x)  # torch.Size([1, 64, 200, 322])
 
+        x = self.LayerNorm(x.permute(0, 3, 2, 1)).permute(0, 3, 2, 1) + residual
+
+        # 下采样
         x = x.permute(0, 3, 1, 2).reshape(B*S, N, K)
-
         x = self.Conv1D(x)
-
         x = x.reshape(B, S, N, -1).permute(0, 2, 3, 1)
 
         x = self.Globally_Attentive(x)
 
+        # 上采样
         x = x.permute(0, 3, 1, 2).reshape(B*S, N, -1)
-
         x = self.ConvTrans1D(x)
-
         x = x.reshape(B, S, N, -1).permute(0, 2, 3, 1)
 
         return x
@@ -260,11 +263,9 @@ class Separation(nn.Module):
 
         super(Separation, self).__init__()
 
-        self.LayerNorm = nn.LayerNorm(normalized_shape=in_channels)  # 128
+        self.LayerNorm = nn.LayerNorm(normalized_shape=in_channels)
 
-        self.Conv1d = nn.Conv1d(in_channels=in_channels,  # 128
-                                out_channels=out_channels,  # 64
-                                kernel_size=1)
+        self.Linear = nn.Linear(in_features=in_channels, out_features=out_channels)
 
         self.Segmentation = Segmentation(K=length)
 
@@ -321,20 +322,11 @@ class Separation(nn.Module):
 
     def forward(self, x):
 
-        # torch.Size([1, 128, 31999]) => torch.Size([1, 31999, 128])
-        x = x.permute(0, 2, 1)  # torch.Size([1, 31999, 128])
+        x = self.LayerNorm(x.permute(0, 2, 1))
 
-        # 层归一化
-        x = self.LayerNorm(x)  # torch.Size([1, 31999, 128])
+        x = self.Linear(x).permute(0, 2, 1)
 
-        # torch.Size([1, 31999, 128]) => torch.Size([1, 128, 31999])
-        x = x.permute(0, 2, 1)  # torch.Size([1, 128, 31999])
-
-        # 一维卷积
-        # torch.Size([1, 128, 31999]) => torch.Size([1, 64, 31999])
-        x = self.Conv1d(x)  # torch.Size([1, 64, 31999])
-
-        x, gap = self.Segmentation(x)  # torch.Size([1, 64, 31999]) => torch.Size([1, 64, 200, 322])
+        x, gap = self.Segmentation(x)  # torch.Size([2, 64, 31999]) => torch.Size([2, 64, 200, 322])
 
         self.residual = []
 
@@ -349,11 +341,11 @@ class Separation(nn.Module):
 
         x = self.PReLU(x)
 
-        x = self.Conv2d(x)  # 通道说话人个数倍, torch.Size([1, 128, 200, 322])
+        x = self.Conv2d(x)  # 通道说话人个数倍, torch.Size([2, 128, 200, 322])
 
-        B, _, K, S = x.shape
+        B, _, K, S = x.shape  # torch.Size([1, 128, 200, 322])
 
-        x = x.reshape(self.Spk, -1, K, S)  # 调整torch.Size([2, 64, 200, 322])
+        x = x.reshape(B * self.Spk, -1, K, S)  # torch.Size([2, 64, 200, 322])
 
         x = self._over_add(x, gap)  # torch.Size([2, 64, 31999])
 
@@ -394,45 +386,37 @@ class Separation(nn.Module):
         return input
 
 
-class Decoder(nn.ConvTranspose1d):
-    """
-        Decoder of the TasNet
-        This module can be seen as the gradient of Conv1d with respect to its input.
-        It is also known as a fractionally-strided convolution
-        or a deconvolution (although it is not an actual deconvolution operation).
-    """
+class Decoder(nn.Module):
 
-    def __init__(self, *args, **kwargs):
-        super(Decoder, self).__init__(*args, **kwargs)
+    def __init__(self, in_channels, kernel_size):
+
+        super(Decoder, self).__init__()
+
+        self.ConvTranspose1d = nn.ConvTranspose1d(in_channels=in_channels,  # 256
+                                                  out_channels=1,
+                                                  kernel_size=kernel_size,  # 16
+                                                  stride=kernel_size//2,  # 8
+                                                  padding=0)
 
     def forward(self, x):
-        """
-            x: [B, N, L]
-        """
 
-        if x.dim() not in [2, 3]:
-            raise RuntimeError("{} accept 3/4D tensor as input".format(self.__name__))
-
-        x = super().forward(x if x.dim() == 3 else torch.unsqueeze(x, 1))
-
-        if torch.squeeze(x).dim() == 1:
-            x = torch.squeeze(x, dim=1)
-        else:
-            x = torch.squeeze(x)
+        x = self.ConvTranspose1d(x)
 
         return x
 
 
 class Sandglasset(nn.Module):
 
-    def __init__(self, in_channels, out_channels, length, hidden_channels=128, num_layers=1, bidirectional=True, num_heads=8, cycle_amount=6,
-                 speakers=2):
+    def __init__(self, in_channels, out_channels, kernel_size, length, hidden_channels=128, num_layers=1,
+                 bidirectional=True, num_heads=8, cycle_amount=6, speakers=2):
 
         super(Sandglasset, self).__init__()
 
         self.in_channels = in_channels
 
         self.out_channels = out_channels
+
+        self.kernel_size = kernel_size
 
         self.length = length
 
@@ -448,7 +432,8 @@ class Sandglasset(nn.Module):
 
         self.speakers = speakers
 
-        self.Encoder = Encoder(out_channels=self.in_channels)
+        self.Encoder = Encoder(out_channels=self.in_channels,
+                               kernel_size=self.kernel_size)
 
         self.Separation = Separation(in_channels=self.in_channels,
                                      out_channels=self.out_channels,
@@ -463,13 +448,11 @@ class Sandglasset(nn.Module):
         self.Spk = self.speakers
 
         self.Decoder = Decoder(in_channels=self.in_channels,
-                               out_channels=1,
-                               kernel_size=2,
-                               stride=1,
-                               padding=0,
-                               bias=False)
+                               kernel_size=self.kernel_size)
 
     def forward(self, x):
+
+        x, rest = self.pad_signal(x)
 
         e = self.Encoder(x)  # torch.Size([1, 32000]) => torch.Size([1, 128, 31999])
 
@@ -483,9 +466,36 @@ class Sandglasset(nn.Module):
 
         del out
 
-        audio = torch.stack(audio, dim=1)
+        audio[0] = audio[0][:, :, self.kernel_size // 2:-(rest + self.kernel_size // 2)].contiguous()  # B, 1, T
+        audio[1] = audio[1][:, :, self.kernel_size // 2:-(rest + self.kernel_size // 2)].contiguous()  # B, 1, T
+        audio = torch.cat(audio, dim=1)  # [B, C, T]
 
         return audio
+
+    def pad_signal(self, x):
+
+        # 输入波形: (B, T) or (B, 1, T)
+        # 调整和填充
+
+        if x.dim() not in [2, 3]:
+            raise RuntimeError("Input can only be 2 or 3 dimensional.")
+
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+
+        batch_size = x.size(0)  # 每一个批次的大小
+        nsample = x.size(2)  # 单个数据的长度
+        rest = self.kernel_size - (self.kernel_size // 2 + nsample % self.kernel_size) % self.kernel_size
+
+        if rest > 0:
+            pad = Variable(torch.zeros(batch_size, 1, rest)).type(x.type())
+            x = torch.cat([x, pad], dim=2)
+
+        pad_aux = Variable(torch.zeros(batch_size, 1, self.kernel_size // 2)).type(x.type())
+
+        x = torch.cat([pad_aux, x, pad_aux], 2)
+
+        return x, rest
 
     @classmethod
     def load_model(cls, path):
@@ -527,16 +537,17 @@ class Sandglasset(nn.Module):
 
 if __name__ == "__main__":
 
-    x = torch.rand(1, 32000)
+    x = torch.rand(3, 32000)
 
-    model = Sandglasset(in_channels=64,
+    model = Sandglasset(in_channels=256,
                         out_channels=64,
+                        kernel_size=8,
                         length=256,
                         hidden_channels=128,
                         num_layers=1,
                         bidirectional=True,
                         num_heads=8,
-                        cycle_amount=4,
+                        cycle_amount=2,
                         speakers=2)
 
     y = model(x)
