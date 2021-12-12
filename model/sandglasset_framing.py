@@ -387,7 +387,7 @@ class Separation(nn.Module):
 
         B, _, K, S = x.shape
 
-        x = x.reshape(self.Spk, -1, K, S)  # torch.Size([2, 256, 256, 128])
+        x = x.reshape(B*self.Spk, -1, K, S)  # torch.Size([2, 256, 256, 128])
 
         x = self._over_add(x, gap)  # torch.Size([2, 256, 16002])
 
@@ -522,9 +522,18 @@ class Sandglasset(nn.Module):
 
 if __name__ == "__main__":
 
-    x = torch.rand(1, 32000)
+    x = torch.rand(2, 32000)
 
-    model = Sandglasset(M=4, E=256, kernel_size=1, D=128, K=256)
+    model = Sandglasset(M=4,
+                        E=256,
+                        kernel_size=4,
+                        D=128,
+                        K=256,
+                        N=2,
+                        H=128,
+                        bidirectional=True,
+                        J=8,
+                        C=2)
 
     y = model(x)
 
