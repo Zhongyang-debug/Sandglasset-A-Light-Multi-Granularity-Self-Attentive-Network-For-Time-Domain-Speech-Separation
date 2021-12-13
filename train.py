@@ -46,6 +46,7 @@ def main(config):
     if config["model"]["type"] == "sandglasset":
         model = Sandglasset(in_channels=config["model"]["sandglasset"]["in_channels"],
                             out_channels=config["model"]["sandglasset"]["out_channels"],
+                            kernel_size=config["model"]["galr"]["kernel_size"],
                             length=config["model"]["sandglasset"]["length"],
                             hidden_channels=config["model"]["sandglasset"]["hidden_channels"],
                             num_layers=config["model"]["sandglasset"]["num_layers"],
