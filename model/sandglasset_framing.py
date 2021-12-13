@@ -525,7 +525,40 @@ class Sandglasset(nn.Module):
 
         return x
 
+    @classmethod
+    def load_model(cls, path):
+        package = torch.load(path, map_location=lambda storage, loc: storage)
+        model = cls.load_model_from_package(package)
+        return model
 
+    @classmethod
+    def load_model_from_package(cls, package):
+        model = cls(M=package['M'], E=package['E'], kernel_size=package['kernel_size'],
+                    D=package['D'], K=package['K'], N=package['N'], H=package['H'],
+                    bidirectional=package['bidirectional'], J=package['J'], C=package['C'])
+        model.load_state_dict(package['state_dict'])
+        return model
+
+    @staticmethod
+    def serialize(model, optimizer, epoch, tr_loss=None, cv_loss=None):
+        package = {
+            # hyper-parameter
+            'M': model.M, 'E': model.E, 'kernel_size': model.kernel_size,
+            'D': model.D, 'K': model.K, 'N': model.N, 'H': model.H,
+            'bidirectional': model.bidirectional, 'J': model.J, 'C': model.C,
+
+            # state
+            'state_dict': model.state_dict(),
+            'optim_dict': optimizer.state_dict(),
+            'epoch': epoch
+        }
+
+        if tr_loss is not None:
+            package['tr_loss'] = tr_loss
+            package['cv_loss'] = cv_loss
+        return package
+
+    
 if __name__ == "__main__":
 
     x = torch.rand(2, 32000)
