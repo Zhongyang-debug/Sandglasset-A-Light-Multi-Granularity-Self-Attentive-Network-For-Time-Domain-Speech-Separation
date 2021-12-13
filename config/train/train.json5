@@ -38,14 +38,15 @@
 
     "sandglasset":
     {
-      "in_channels": 64,
-      "out_channels": 64,
+      "in_channels": 256,
+      "out_channels": 128,
+      "kernel_size": 16,
       "length": 256,
       "hidden_channels": 128,
       "num_layers": 1,
       "bidirectional": true,
       "num_heads": 8,
-      "cycle_amount": 4,
+      "cycle_amount": 6,
       "speakers": 2
     }
   },
