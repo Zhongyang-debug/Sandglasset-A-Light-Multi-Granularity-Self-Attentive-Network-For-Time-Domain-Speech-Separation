@@ -506,10 +506,10 @@ class Sandglasset(nn.Module):
     @classmethod
     def load_model_from_package(cls, package):
         model = cls(in_channels=package['in_channels'], out_channels=package['out_channels'],
-                    length=package['length'], hidden_channels=package['hidden_channels'],
-                    num_layers=package['num_layers'], bidirectional=package['bidirectional'],
-                    num_heads=package['num_heads'], cycle_amount=package['cycle_amount'],
-                    speakers=package['speakers'])
+                    kernel_size=package['kernel_size'], length=package['length'],
+                    hidden_channels=package['hidden_channels'], num_layers=package['num_layers'],
+                    bidirectional=package['bidirectional'], num_heads=package['num_heads'],
+                    cycle_amount=package['cycle_amount'], speakers=package['speakers'])
         model.load_state_dict(package['state_dict'])
         return model
 
@@ -518,10 +518,10 @@ class Sandglasset(nn.Module):
         package = {
             # hyper-parameter
             'in_channels': model.in_channels, 'out_channels': model.out_channels,
-            'length': model.length, 'hidden_channels': model.hidden_channels,
-            'num_layers': model.num_layers, 'bidirectional': model.bidirectional,
-            'num_heads': model.num_heads, 'cycle_amount': model.cycle_amount,
-            'speakers': model.speakers,
+            'kernel_size': model.kernel_size, 'length': model.length,
+            'hidden_channels': model.hidden_channels, 'num_layers': model.num_layers,
+            'bidirectional': model.bidirectional, 'num_heads': model.num_heads,
+            'cycle_amount': model.cycle_amount, 'speakers': model.speakers,
 
             # state
             'state_dict': model.state_dict(),
