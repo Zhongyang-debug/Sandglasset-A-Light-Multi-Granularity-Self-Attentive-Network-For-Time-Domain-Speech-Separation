@@ -52,15 +52,8 @@ class Trainer(object):
             print('Loading checkpoint model %s' % self.continue_from)
             package = torch.load(self.save_folder + self.continue_from)
 
-            # """
-            #     https://blog.csdn.net/qq_41563738/article/details/102913920
-            # """
-            # from collections import OrderedDict
-            # new_state_dict = OrderedDict()
-            # for key, value in package['state_dict'].items():
-            #     name = 'module.' + key
-            #     new_state_dict[name] = value
-            # self.model.load_state_dict(new_state_dict)
+            if isinstance(self.model, torch.nn.DataParallel):
+                self.model = self.model.module
 
             self.model.load_state_dict(package['state_dict'])
             self.optimizer.load_state_dict(package['optim_dict'])
