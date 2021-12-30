@@ -121,36 +121,33 @@ class Locally_Recurrent(nn.Module):
 
 
 class Positional_Encoding(nn.Module):
+    """
+        Implement the positional encoding (PE) function.
+        PE(pos, 2i)   = sin(pos/(10000^(2i/dmodel)))
+        PE(pos, 2i+1) = cos(pos/(10000^(2i/dmodel)))
+    """
 
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
+    def __init__(self, d_model, max_len=5000):
 
         super(Positional_Encoding, self).__init__()
 
-        # 从理解来讲，需要注意的就是偶数和奇数在公式上有一个共同部分，我们使用 log 函数把次方拿下来，方便计算；
-        # pos 代表的是单词在句子中的索引，这点需要注意；比如 max_len 是 128 个，那么索引就是从 0, 1, 2,..., 127
-        # 假设我的 d_model 是 512, 2i 那个符号中 i 从 0 取到了 255，那么 2i 对应取值就是 0, 2, 4, ..., 510
-        self.dropout = nn.Dropout(p=dropout)
+        # Compute the positional encodings once in log space.
+        pe = torch.zeros(max_len, d_model, requires_grad=False)
+        position = torch.arange(0, max_len).unsqueeze(1).float()
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
 
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)  # pe[:, 0::2]是从 0 开始到最后面，补长为 2，其实代表的就是偶数位置
-        pe[:, 1::2] = torch.cos(position * div_term)  # pe[:, 1::2]是从 1 开始到最后面，补长为 2，其实代表的就是奇数位置
-        # 上面代码获取之后得到的 pe: [max_len*d_model]
-
-        pe = pe.unsqueeze(0).transpose(0, 1)  # [max_len*1*d_model]
-
-        self.register_buffer('pe', pe)  # 定一个缓冲区，其实简单理解为这个参数不更新就可以
-
-    def forward(self, x):
-
+    def forward(self, input):
         """
-            x: [seq_len, batch_size, d_model]
+            Args:
+                input: N x T x D
         """
+        length = input.size(1)
 
-        x = x + self.pe[:x.size(0), :]
-
-        return self.dropout(x)
+        return self.pe[:, :length]
 
 
 class Globally_Attentive(nn.Module):
