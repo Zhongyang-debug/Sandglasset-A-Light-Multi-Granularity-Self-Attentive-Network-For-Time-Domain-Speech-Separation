@@ -159,7 +159,6 @@ class Globally_Attentive(nn.Module):
         self.LayerNorm1 = nn.LayerNorm(normalized_shape=in_channels)
 
         self.Positional_Encoding = Positional_Encoding(d_model=in_channels,
-                                                       dropout=0.1,
                                                        max_len=8000)
 
         self.MultiheadAttention = nn.MultiheadAttention(embed_dim=in_channels,
