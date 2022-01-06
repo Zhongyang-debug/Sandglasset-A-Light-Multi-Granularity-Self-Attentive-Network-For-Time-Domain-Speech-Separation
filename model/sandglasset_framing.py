@@ -182,76 +182,57 @@ class Locally_Recurrent(nn.Module):
 
 
 class Positional_Encoding(nn.Module):
-    """
-        Implement the positional encoding (PE) function.
-        PE(pos, 2i)   = sin(pos/(10000^(2i/dmodel)))
-        PE(pos, 2i+1) = cos(pos/(10000^(2i/dmodel)))
-    """
 
-    def __init__(self, d_model, max_len=5000):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
 
         super(Positional_Encoding, self).__init__()
 
-        # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model, requires_grad=False)
-        position = torch.arange(0, max_len).unsqueeze(1).float()
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
+        # 从理解来讲，需要注意的就是偶数和奇数在公式上有一个共同部分，我们使用 log 函数把次方拿下来，方便计算；
+        # pos 代表的是单词在句子中的索引，这点需要注意；比如 max_len 是 128 个，那么索引就是从 0, 1, 2,..., 127
+        # 假设我的 d_model 是 512, 2i 那个符号中 i 从 0 取到了 255，那么 2i 对应取值就是 0, 2, 4, ..., 510
+        self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, input):
-        """
-            Args:
-                input: N x T x D
-        """
-        length = input.size(1)
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)  # pe[:, 0::2]是从 0 开始到最后面，补长为 2，其实代表的就是偶数位置
+        pe[:, 1::2] = torch.cos(position * div_term)  # pe[:, 1::2]是从 1 开始到最后面，补长为 2，其实代表的就是奇数位置
+        # 上面代码获取之后得到的 pe: [max_len*d_model]
 
-        return self.pe[:, :length]
+        pe = pe.unsqueeze(0).transpose(0, 1)  # [max_len*1*d_model]
 
-
-class Self_Attention(nn.Module):
-    # input : batch_size * seq_len * input_dim
-    # q : batch_size * input_dim * dim_k
-    # k : batch_size * input_dim * dim_k
-    # v : batch_size * input_dim * dim_v
-    def __init__(self, input_dim, dim_k, dim_v):
-        super(Self_Attention, self).__init__()
-        self.q = nn.Linear(input_dim, dim_k)
-        self.k = nn.Linear(input_dim, dim_k)
-        self.v = nn.Linear(input_dim, dim_v)
-        self._norm_fact = 1 / sqrt(dim_k)
+        self.register_buffer('pe', pe)  # 定一个缓冲区，其实简单理解为这个参数不更新就可以
 
     def forward(self, x):
-        Q = self.q(x)  # Q: batch_size * seq_len * dim_k
-        K = self.k(x)  # K: batch_size * seq_len * dim_k
-        V = self.v(x)  # V: batch_size * seq_len * dim_v
 
-        atten = nn.Softmax(dim=-1)(
-            torch.bmm(Q, K.permute(0, 2, 1))) * self._norm_fact  # Q * K.T() # batch_size * seq_len * seq_len
+        """
+            x: [seq_len, batch_size, d_model]
+        """
 
-        output = torch.bmm(atten, V)  # Q * K.T() * V # batch_size * seq_len * dim_v
+        x = x + self.pe[:x.size(0), :]
 
-        return output
+        return self.dropout(x)
 
 
 class Globally_Attentive(nn.Module):
 
-    def __init__(self, in_channels, num_heads=8):
+    def __init__(self, in_channels, num_heads=8, Dropout=0.1):
 
         super(Globally_Attentive, self).__init__()
 
         self.LayerNorm1 = nn.LayerNorm(normalized_shape=in_channels)
 
         self.Positional_Encoding = Positional_Encoding(d_model=in_channels,
+                                                       dropout=Dropout,
                                                        max_len=8000)
 
-        self.Self_Attention = Self_Attention(input_dim=in_channels, dim_k=in_channels, dim_v=in_channels)
+        self.MultiheadAttention = nn.MultiheadAttention(embed_dim=in_channels,
+                                                        num_heads=num_heads,
+                                                        dropout=Dropout)
 
         self.LayerNorm2 = nn.LayerNorm(normalized_shape=in_channels)
 
-        self.Dropout = nn.Dropout(p=0.1)
+        self.Dropout = nn.Dropout(p=Dropout)
 
     def forward(self, x):
 
@@ -265,7 +246,7 @@ class Globally_Attentive(nn.Module):
 
         residual2 = x
 
-        x = self.Self_Attention(x)  # torch.Size([200, 322, 128])
+        x = self.MultiheadAttention(x, x, x, attn_mask=None, key_padding_mask=None)[0]  # torch.Size([200, 322, 128])
 
         x = residual2 + self.Dropout(x)  # torch.Size([200, 322, 128])
 
@@ -577,7 +558,7 @@ class Sandglasset(nn.Module):
             package['cv_loss'] = cv_loss
         return package
 
-    
+
 if __name__ == "__main__":
 
     x = torch.rand(2, 32000)
