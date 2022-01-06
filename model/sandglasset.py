@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from math import log, sqrt
+import math
 from torch.autograd import Variable
 
 
@@ -82,11 +82,24 @@ class Segmentation(nn.Module):
 
 
 class Locally_Recurrent(nn.Module):
+    """
+        LSTM
+        优点：改善了 RNN 中存在的长期依赖问题；LSTM 的表现通常比时间递归神经网络及隐马尔科夫模型（HMM）更好；作为非线性模型，LSTM 可作为复杂
+             的非线性单元用于构造更大型深度神经网络。
+        缺点：一个缺点是 RNN 的梯度问题在 LSTM 及其变种里面得到了一定程度的解决，但还是不够。它可以处理 100 个量级的序列，而对于 1000 个量级，
+             或者更长的序列则依然会显得很棘手；另一个缺点是每一个 LSTM 的 cell 里面都意味着有 4 个全连接层(MLP)，如果 LSTM 的时间跨度很大，
+             并且网络又很深，这个计算量会很大，很耗时。
+    """
 
     def __init__(self, in_channels, hidden_channels=128, num_layers=1, bidirectional=True):
 
         super(Locally_Recurrent, self).__init__()
 
+        """
+            sequence: 序列的个数，每个句子的长度；
+            batch_size：输入模型多少个句子，或者股票数据输入模型多少个时间单位的数据；
+            feature：每个具体的单词用多少维向量表示，或者股票数据中每一个具体时刻采集多少个具体的值。
+        """
         self.Bi_LSTM = nn.LSTM(input_size=in_channels,  # 输入的维度
                                hidden_size=hidden_channels,  # 隐藏层的维度
                                num_layers=num_layers,  # LSTM 的层数
@@ -134,7 +147,7 @@ class Positional_Encoding(nn.Module):
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model, requires_grad=False)
         position = torch.arange(0, max_len).unsqueeze(1).float()
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(log(10000.0) / d_model))
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
@@ -150,31 +163,6 @@ class Positional_Encoding(nn.Module):
         return self.pe[:, :length]
 
 
-class Self_Attention(nn.Module):
-    # input : batch_size * seq_len * input_dim
-    # q : batch_size * input_dim * dim_k
-    # k : batch_size * input_dim * dim_k
-    # v : batch_size * input_dim * dim_v
-    def __init__(self, input_dim, dim_k, dim_v):
-        super(Self_Attention, self).__init__()
-        self.q = nn.Linear(input_dim, dim_k)
-        self.k = nn.Linear(input_dim, dim_k)
-        self.v = nn.Linear(input_dim, dim_v)
-        self._norm_fact = 1 / sqrt(dim_k)
-
-    def forward(self, x):
-        Q = self.q(x)  # Q: batch_size * seq_len * dim_k
-        K = self.k(x)  # K: batch_size * seq_len * dim_k
-        V = self.v(x)  # V: batch_size * seq_len * dim_v
-
-        atten = nn.Softmax(dim=-1)(
-            torch.bmm(Q, K.permute(0, 2, 1))) * self._norm_fact  # Q * K.T() # batch_size * seq_len * seq_len
-
-        output = torch.bmm(atten, V)  # Q * K.T() * V # batch_size * seq_len * dim_v
-
-        return output
-
-
 class Globally_Attentive(nn.Module):
 
     def __init__(self, in_channels, num_heads=8):
@@ -186,7 +174,9 @@ class Globally_Attentive(nn.Module):
         self.Positional_Encoding = Positional_Encoding(d_model=in_channels,
                                                        max_len=8000)
 
-        self.Self_Attention = Self_Attention(input_dim=in_channels, dim_k=in_channels, dim_v=in_channels)
+        self.MultiheadAttention = nn.MultiheadAttention(embed_dim=in_channels,
+                                                        num_heads=num_heads,
+                                                        dropout=0.1)
 
         self.LayerNorm2 = nn.LayerNorm(normalized_shape=in_channels)
 
@@ -204,7 +194,7 @@ class Globally_Attentive(nn.Module):
 
         residual2 = x
 
-        x = self.Self_Attention(x)  # torch.Size([200, 322, 128])
+        x = self.MultiheadAttention(x, x, x, attn_mask=None, key_padding_mask=None)[0]  # torch.Size([200, 322, 128])
 
         x = residual2 + self.Dropout(x)  # torch.Size([200, 322, 128])
 
@@ -560,7 +550,7 @@ if __name__ == "__main__":
 
     model = Sandglasset(in_channels=256,
                         out_channels=64,
-                        kernel_size=4,
+                        kernel_size=8,
                         length=256,
                         hidden_channels=128,
                         num_layers=1,
