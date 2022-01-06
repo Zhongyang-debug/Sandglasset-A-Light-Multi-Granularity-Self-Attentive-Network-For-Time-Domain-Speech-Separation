@@ -82,24 +82,11 @@ class Segmentation(nn.Module):
 
 
 class Locally_Recurrent(nn.Module):
-    """
-        LSTM
-        优点：改善了 RNN 中存在的长期依赖问题；LSTM 的表现通常比时间递归神经网络及隐马尔科夫模型（HMM）更好；作为非线性模型，LSTM 可作为复杂
-             的非线性单元用于构造更大型深度神经网络。
-        缺点：一个缺点是 RNN 的梯度问题在 LSTM 及其变种里面得到了一定程度的解决，但还是不够。它可以处理 100 个量级的序列，而对于 1000 个量级，
-             或者更长的序列则依然会显得很棘手；另一个缺点是每一个 LSTM 的 cell 里面都意味着有 4 个全连接层(MLP)，如果 LSTM 的时间跨度很大，
-             并且网络又很深，这个计算量会很大，很耗时。
-    """
 
     def __init__(self, in_channels, hidden_channels=128, num_layers=1, bidirectional=True):
 
         super(Locally_Recurrent, self).__init__()
 
-        """
-            sequence: 序列的个数，每个句子的长度；
-            batch_size：输入模型多少个句子，或者股票数据输入模型多少个时间单位的数据；
-            feature：每个具体的单词用多少维向量表示，或者股票数据中每一个具体时刻采集多少个具体的值。
-        """
         self.Bi_LSTM = nn.LSTM(input_size=in_channels,  # 输入的维度
                                hidden_size=hidden_channels,  # 隐藏层的维度
                                num_layers=num_layers,  # LSTM 的层数
