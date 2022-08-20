@@ -54,7 +54,7 @@ class Segmentation(nn.Module):
         input1 = input[:, :, :-P].contiguous().view(B, D, -1, self.K)  # torch.Size([1, 128, 161, 200])
         input2 = input[:, :, P:].contiguous().view(B, D, -1, self.K)  # torch.Size([1, 128, 161, 200])
 
-        input = torch.cat([input1, input2], dim=3).view(B, D, -1, self.K).transpose(2, 3)  # torch.Size([1, 128, 200, 322])
+        input = torch.cat([input1, input2], dim=3).view(B, D, -1, self.K).transpose(2, 3).contiguous()  # torch.Size([1, 128, 200, 322])
 
         return input.contiguous(), gap
 
@@ -87,12 +87,12 @@ class Locally_Recurrent(nn.Module):
 
         super(Locally_Recurrent, self).__init__()
 
-        self.Bi_LSTM = nn.LSTM(input_size=in_channels,  # 输入的维度
-                               hidden_size=hidden_channels,  # 隐藏层的维度
-                               num_layers=num_layers,  # LSTM 的层数
-                               bias=True,  # 偏置
-                               batch_first=True,  # True, (batch, seq, feature); False, (seq, batch, feature)
-                               bidirectional=bidirectional)  # 是否为双向 LSTM
+        self.LSTM = nn.LSTM(input_size=in_channels,  # 输入的维度
+                            hidden_size=hidden_channels,  # 隐藏层的维度
+                            num_layers=num_layers,  # LSTM 的层数
+                            bias=True,  # 偏置
+                            batch_first=True,  # True, (batch, seq, feature); False, (seq, batch, feature)
+                            bidirectional=bidirectional)  # 是否为双向 LSTM
 
         self.LayerNorm = nn.LayerNorm(normalized_shape=in_channels)
 
@@ -103,11 +103,11 @@ class Locally_Recurrent(nn.Module):
 
         B, N, K, S = x.shape  # torch.Size([1, 128, 200, 322])
 
-        x = x.permute(0, 3, 2, 1).reshape(B*S, K, N)  # 调整维度通过 LSTM, torch.Size([322, 200, 128])
+        x = x.permute(0, 3, 2, 1).contiguous().view(B*S, K, N)  # 调整维度通过 LSTM, torch.Size([322, 200, 128])
 
         residual1 = x  # 残余连接
 
-        x, _ = self.Bi_LSTM(x)  # 双向 LSTM, torch.Size([200, 322, 256])
+        x, _ = self.LSTM(x)  # 双向 LSTM, torch.Size([200, 322, 256])
 
         x = self.Linear(x)  # 线性层减少输出通道, torch.Size([200, 322, 128])
 
@@ -115,7 +115,7 @@ class Locally_Recurrent(nn.Module):
 
         del residual1
 
-        x = x.reshape(B, S, K, N).permute(0, 3, 2, 1)  # 恢复原来的维度, torch.Size([1, 128, 200, 322])
+        x = x.view(B, S, K, N).permute(0, 3, 2, 1).contiguous()  # 恢复原来的维度, torch.Size([1, 128, 200, 322])
 
         return x
 
@@ -127,7 +127,7 @@ class Positional_Encoding(nn.Module):
         PE(pos, 2i+1) = cos(pos/(10000^(2i/dmodel)))
     """
 
-    def __init__(self, d_model, max_len=5000):
+    def __init__(self, d_model, max_len=32000):
 
         super(Positional_Encoding, self).__init__()
 
@@ -159,11 +159,12 @@ class Globally_Attentive(nn.Module):
         self.LayerNorm1 = nn.LayerNorm(normalized_shape=in_channels)
 
         self.Positional_Encoding = Positional_Encoding(d_model=in_channels,
-                                                       max_len=8000)
+                                                       max_len=32000)
 
         self.MultiheadAttention = nn.MultiheadAttention(embed_dim=in_channels,
                                                         num_heads=num_heads,
-                                                        dropout=0.1)
+                                                        dropout=0.1,
+                                                        batch_first=True)
 
         self.LayerNorm2 = nn.LayerNorm(normalized_shape=in_channels)
 
@@ -175,7 +176,7 @@ class Globally_Attentive(nn.Module):
 
         residual1 = x  # 残余连接, torch.Size([1, 128, 200, 322])
 
-        x = x.permute(0, 2, 3, 1).reshape(B*K, S, N)  # 调整维度, 注意与循环网络区分，分别为局部和全局, torch.Size([200, 322, 128])
+        x = x.permute(0, 2, 3, 1).contiguous().view(B*K, S, N)  # 调整维度, 注意与循环网络区分, torch.Size([200, 322, 128])
 
         x = self.LayerNorm1(x) + self.Positional_Encoding(x)  # 加入位置信息, torch.Size([200, 322, 128])
 
@@ -189,7 +190,7 @@ class Globally_Attentive(nn.Module):
 
         x = self.LayerNorm2(x)
 
-        x = x.reshape(B, K, S, N).permute(0, 3, 1, 2)  # torch.Size([1, 128, 200, 322])
+        x = x.view(B, K, S, N).permute(0, 3, 1, 2).contiguous()  # torch.Size([1, 128, 200, 322])
 
         x = x + residual1  # torch.Size([1, 128, 200, 322])
 
@@ -235,19 +236,19 @@ class Sandglasset_Block(nn.Module):
 
         x = self.Locally_Recurrent(x)  # torch.Size([1, 64, 200, 322])
 
-        x = self.LayerNorm(x.permute(0, 3, 2, 1)).permute(0, 3, 2, 1) + residual
+        x = self.LayerNorm(x.permute(0, 3, 2, 1).contiguous()).permute(0, 3, 2, 1).contiguous() + residual
 
         # 下采样
-        x = x.permute(0, 3, 1, 2).reshape(B*S, N, K)
+        x = x.permute(0, 3, 1, 2).contiguous().view(B*S, N, K)
         x = self.Conv1D(x)
-        x = x.reshape(B, S, N, -1).permute(0, 2, 3, 1)
+        x = x.view(B, S, N, -1).permute(0, 2, 3, 1).contiguous()
 
         x = self.Globally_Attentive(x)
 
         # 上采样
-        x = x.permute(0, 3, 1, 2).reshape(B*S, N, -1)
+        x = x.permute(0, 3, 1, 2).contiguous().view(B*S, N, -1)
         x = self.ConvTrans1D(x)
-        x = x.reshape(B, S, N, -1).permute(0, 2, 3, 1)
+        x = x.view(B, S, N, -1).permute(0, 2, 3, 1).contiguous()
 
         return x
 
@@ -318,9 +319,9 @@ class Separation(nn.Module):
 
     def forward(self, x):
 
-        x = self.LayerNorm(x.permute(0, 2, 1))
+        x = self.LayerNorm(x.permute(0, 2, 1).contiguous())
 
-        x = self.Linear(x).permute(0, 2, 1)
+        x = self.Linear(x).permute(0, 2, 1).contiguous()
 
         x, gap = self.Segmentation(x)  # torch.Size([3, 64, 256, 64])
 
@@ -341,7 +342,7 @@ class Separation(nn.Module):
 
         B, _, K, S = x.shape  # torch.Size([1, 128, 200, 322])
 
-        x = x.reshape(B * self.Spk, -1, K, S)  # torch.Size([2, 64, 200, 322])
+        x = x.view(B * self.Spk, -1, K, S)  # torch.Size([2, 64, 200, 322])
 
         x = self._over_add(x, gap)  # torch.Size([2, 64, 31999])
 
@@ -351,11 +352,11 @@ class Separation(nn.Module):
 
         _, N, L = x.shape
 
-        x = x.reshape(B, self.Spk, N, L)  # torch.Size([1, 2, 128, 31999])
+        x = x.view(B, self.Spk, N, L)  # torch.Size([1, 2, 128, 31999])
 
         x = self.ReLU(x)
 
-        x = x.transpose(0, 1)  # torch.Size([2, 1, 128, 31999])
+        x = x.transpose(0, 1).contiguous()  # torch.Size([2, 1, 128, 31999])
 
         return x
 
@@ -537,7 +538,7 @@ if __name__ == "__main__":
 
     model = Sandglasset(in_channels=256,
                         out_channels=64,
-                        kernel_size=8,
+                        kernel_size=4,
                         length=256,
                         hidden_channels=128,
                         num_layers=1,
