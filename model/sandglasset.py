@@ -239,16 +239,16 @@ class Sandglasset_Block(nn.Module):
         x = self.LayerNorm(x.permute(0, 3, 2, 1).contiguous()).permute(0, 3, 2, 1).contiguous() + residual
 
         # 下采样
-        x = x.permute(0, 3, 1, 2).contiguous().view(B*S, N, K)
+        x = x.permute(0, 2, 1, 3).contiguous().view(B*K, N, S)
         x = self.Conv1D(x)
-        x = x.view(B, S, N, -1).permute(0, 2, 3, 1).contiguous()
+        x = x.view(B, K, N, -1).permute(0, 2, 1, 3).contiguous()
 
         x = self.Globally_Attentive(x)
 
         # 上采样
-        x = x.permute(0, 3, 1, 2).contiguous().view(B*S, N, -1)
+        x = x.permute(0, 2, 1, 3).contiguous().view(B*K, N, -1)
         x = self.ConvTrans1D(x)
-        x = x.view(B, S, N, -1).permute(0, 2, 3, 1).contiguous()
+        x = x.view(B, K, N, S).permute(0, 2, 1, 3).contiguous()
 
         return x
 
