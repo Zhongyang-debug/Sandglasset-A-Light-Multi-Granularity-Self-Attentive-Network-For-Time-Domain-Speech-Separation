@@ -2,7 +2,7 @@
 
 Sandglasset-A-Light-Multi-Granularity-Self-Attentive-Network-For-Time-Domain-Speech-Separation
 
-Download address：https://arxiv.org/pdf/2103.00819v2.pdf
+论文下载地址：https://arxiv.org/pdf/2103.00819v2.pdf
 
 第一步，运行 perprocess.py 读取数据地址; ./config/train/train.json 设置参数；
  
@@ -11,5 +11,3 @@ Download address：https://arxiv.org/pdf/2103.00819v2.pdf
 第三步，测试分数，运行 evaluate.py；
 
 第四步，分离语音，运行 separate.py。
-
-sandglasset_framing.py add frame splitting.
